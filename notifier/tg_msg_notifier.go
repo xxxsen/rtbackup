@@ -13,9 +13,9 @@ const (
 	defaultTgTemplate = `
 <b>{{.Title}}</b>
 Path: {{.Path}}
-Start: {{TsPrinter .Start}}
-End: {{TsPrinter .End}}
-Result: {{ResultPrinter .IsSuccess}}	
+Start: {{.Start | TsPrinter}}
+End: {{.End | TsPrinter}}
+Result: {{.IsSuccess | ResultPrinter}}	
 `
 )
 
@@ -31,11 +31,7 @@ func NewTGNotifier(host string, user string, pwd string) (INotifier, error) {
 		return nil, fmt.Errorf("invalid params")
 	}
 
-	tplt, err := template.New("tg").Parse(defaultTgTemplate)
-	if err != nil {
-		return nil, fmt.Errorf("parse template failed, err:%w", err)
-	}
-	tplt = tplt.Funcs(template.FuncMap{
+	tplt, err := template.New("tg").Funcs(template.FuncMap{
 		"TsPrinter": func(t int64) string {
 			return time.UnixMilli(t).Format("2006-01-02 15:04:05")
 		},
@@ -45,7 +41,10 @@ func NewTGNotifier(host string, user string, pwd string) (INotifier, error) {
 			}
 			return "Failed"
 		},
-	})
+	}).Parse(defaultTgTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("parse template failed, err:%w", err)
+	}
 
 	return &tgNotifier{
 		host: host,

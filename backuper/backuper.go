@@ -43,6 +43,7 @@ func (b *backuperImpl) Run(ctx context.Context) error {
 			return fmt.Errorf("add cron func failed, item:%+v, err:%w", item, err)
 		}
 	}
+	c.Run()
 	return nil
 }
 
