@@ -122,8 +122,8 @@ func (b *backuperImpl) rebuildHookList(item *backupItem) ([]string, []string) {
 
 	if b.c.enableDockerCompose {
 		if b.isContainsFile(item.Path, []string{"docker-compose.yml", "docker-compose.yaml"}) {
-			pre = append([]string{"docker compose down"}, pre...)
-			after = append(after, "docker compose up -d")
+			pre = append([]string{"docker compose stop"}, pre...)
+			after = append(after, "docker compose restart")
 		}
 	}
 
