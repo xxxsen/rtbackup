@@ -21,9 +21,18 @@ type Notifier struct {
 	Password string `json:"password"` // password for notification service
 }
 
+type ResticKeep struct {
+	Last    int `json:"last"`    // keep last N backups
+	Daily   int `json:"daily"`   // keep daily backups for N days
+	Weekly  int `json:"weekly"`  // keep weekly backups for N weeks
+	Monthly int `json:"monthly"` // keep monthly backups for N months
+	Yearly  int `json:"yearly"`  // keep yearly backups for N years
+}
+
 type Restic struct {
-	Repo     string `json:"repo"`     // restic repository path
-	Password string `json:"password"` // restic repository password
+	Repo     string     `json:"repo"`     // restic repository path
+	Password string     `json:"password"` // restic repository password
+	Keep     ResticKeep `json:"keep"`     // restic keep policy
 }
 
 type Config struct {

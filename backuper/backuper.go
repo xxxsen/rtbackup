@@ -81,6 +81,17 @@ func (b *backuperImpl) runItemBackup(ctx context.Context, item *backupItem) (err
 			err = fmt.Errorf("run item backup panic, name:%s, panic:%v, stack:%s", item.Name, r, string(debug.Stack()))
 		}
 	}()
+	defer func() {
+		if b.c.keepRule.Last == 0 && b.c.keepRule.Daily == 0 && b.c.keepRule.Weekly == 0 &&
+			b.c.keepRule.Monthly == 0 && b.c.keepRule.Yearly == 0 {
+			return
+		}
+		if e := b.c.resitcer.Forget(ctx, b.c.keepRule.Last, b.c.keepRule.Daily, b.c.keepRule.Weekly,
+			b.c.keepRule.Monthly, b.c.keepRule.Yearly); e != nil {
+			err = fmt.Errorf("do backup forget failed, name:%s, err:%w", item.Name, e)
+		}
+	}()
+
 	preHooks, afterHooks := b.rebuildHookList(item)
 	defer func() {
 		if e := b.runCmds(ctx, item, afterHooks); e != nil { //after无论如何都要执行

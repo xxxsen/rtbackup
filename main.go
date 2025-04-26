@@ -41,6 +41,7 @@ func main() {
 		backuper.WithNotifier(noti),
 		backuper.WithRestic(rst),
 		backuper.WithEnableDockerCompose(c.EnableDockerCompose),
+		backuper.WithKeepRule(c.Restic.Keep.Last, c.Restic.Keep.Daily, c.Restic.Keep.Weekly, c.Restic.Keep.Monthly, c.Restic.Keep.Yearly),
 	)
 	b, err := backuper.New(opts...)
 	if err != nil {
