@@ -16,6 +16,7 @@ type BackupItem struct {
 }
 
 type Notifier struct {
+	Enable   bool   `json:"enable"`   // whether to enable notification
 	Host     string `json:"host"`     // notification service host
 	User     string `json:"user"`     // user for notification service
 	Password string `json:"password"` // password for notification service

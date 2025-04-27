@@ -156,10 +156,19 @@ func (b *backuperImpl) runCmds(ctx context.Context, item *backupItem, cmds []str
 func (b *backuperImpl) runCmd(ctx context.Context, workdir string, cmdstr string) error {
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", cmdstr)
 	stderr := bytes.Buffer{}
+	stdout := bytes.Buffer{}
+	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	cmd.Dir = workdir
+	start := time.Now()
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("exec cmd failed, cmd:%s, err:%w, errmsg:%s", cmdstr, err, stderr.String())
 	}
+	logutil.GetLogger(ctx).Info("run command success",
+		zap.String("cmd", cmdstr),
+		zap.String("workdir", workdir),
+		zap.String("stdout", stdout.String()),
+		zap.String("stderr", stderr.String()),
+		zap.Duration("cost", time.Since(start)))
 	return nil
 }

@@ -29,9 +29,12 @@ func main() {
 	if err != nil {
 		logkit.Fatal("failed to create restic client", zap.Error(err))
 	}
-	noti, err := notifier.NewTGNotifier(c.Notifier.Host, c.Notifier.User, c.Notifier.Password)
-	if err != nil {
-		logkit.Fatal("failed to create notifier", zap.Error(err))
+	var noti notifier.INotifier = notifier.Nop
+	if c.Notifier.Enable {
+		noti, err = notifier.NewTGNotifier(c.Notifier.Host, c.Notifier.User, c.Notifier.Password)
+		if err != nil {
+			logkit.Fatal("failed to create notifier", zap.Error(err))
+		}
 	}
 	opts := make([]backuper.Option, 0, len(c.BackupList)+3)
 	for _, item := range c.BackupList {
