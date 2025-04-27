@@ -8,6 +8,7 @@ import (
 	"rtbackup/config"
 	"rtbackup/notifier"
 	"rtbackup/restic"
+	"rtbackup/utils"
 
 	"github.com/xxxsen/common/logger"
 	"go.uber.org/zap"
@@ -38,12 +39,13 @@ func main() {
 	}
 	opts := make([]backuper.Option, 0, len(c.BackupList)+3)
 	for _, item := range c.BackupList {
+		wrapDockerComposeCheck(c, item)
+		wrapStartStopShellCheck(c, item)
 		opts = append(opts, backuper.WithAddBackupItem(item.Name, item.Path, item.Expr, item.PreHooks, item.PostHooks))
 	}
 	opts = append(opts,
 		backuper.WithNotifier(noti),
 		backuper.WithRestic(rst),
-		backuper.WithEnableDockerCompose(c.EnableDockerCompose),
 		backuper.WithKeepRule(c.Restic.Keep.Last, c.Restic.Keep.Daily, c.Restic.Keep.Weekly, c.Restic.Keep.Monthly, c.Restic.Keep.Yearly),
 	)
 	b, err := backuper.New(opts...)
@@ -52,5 +54,38 @@ func main() {
 	}
 	if err := b.Run(context.Background()); err != nil {
 		logkit.Fatal("failed to run backuper", zap.Error(err))
+	}
+}
+
+func wrapDockerComposeCheck(c *config.Config, item *config.BackupItem) {
+	if !c.SwitchConfig.CheckDockerCompose {
+		return
+	}
+	if !utils.IsFileExists(item.Path, []string{"docker-compose.yml", "docker-compose.yaml"}) {
+		return
+	}
+	item.PreHooks = append([]string{"docker compose stop"}, item.PreHooks...)
+	item.PostHooks = append(item.PostHooks, "docker compose restart")
+}
+
+func wrapStartStopShellCheck(c *config.Config, item *config.BackupItem) {
+	if !c.SwitchConfig.CheckStartStopScript {
+		return
+	}
+	stopShell := utils.IsFileExists(item.Path, []string{"stop.sh"})
+	restartShell := utils.IsFileExists(item.Path, []string{"restart.sh"})
+	startShell := false
+	if !restartShell {
+		startShell = utils.IsFileExists(item.Path, []string{"start.sh"})
+	}
+	if !(stopShell && (restartShell || startShell)) {
+		return
+	}
+	item.PreHooks = append([]string{"sh stop.sh"}, item.PreHooks...)
+	if restartShell {
+		item.PostHooks = append(item.PostHooks, "sh restart.sh")
+	}
+	if startShell {
+		item.PostHooks = append(item.PostHooks, "sh start.sh")
 	}
 }

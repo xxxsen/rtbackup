@@ -23,11 +23,10 @@ type keepRule struct {
 }
 
 type config struct {
-	backupList          []backupItem
-	keepRule            keepRule
-	resitcer            restic.IResitc
-	notifier            notifier.INotifier
-	enableDockerCompose bool
+	backupList []backupItem
+	keepRule   keepRule
+	resitcer   restic.IResitc
+	notifier   notifier.INotifier
 }
 
 type Option func(c *config)
@@ -64,10 +63,5 @@ func WithRestic(r restic.IResitc) Option {
 func WithNotifier(n notifier.INotifier) Option {
 	return func(c *config) {
 		c.notifier = n
-	}
-}
-func WithEnableDockerCompose(enable bool) Option {
-	return func(c *config) {
-		c.enableDockerCompose = enable
 	}
 }

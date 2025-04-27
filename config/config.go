@@ -37,11 +37,16 @@ type Restic struct {
 }
 
 type Config struct {
-	BackupList          []BackupItem     `json:"backup_list"`
-	Notifier            Notifier         `json:"notifier"`
-	EnableDockerCompose bool             `json:"enable_docker_compose"` // whether to enable docker compose for backup
-	Restic              Restic           `json:"restic"`                // restic configuration
-	LogConfig           logger.LogConfig `json:"log_config"`            // logging configuration
+	BackupList   []*BackupItem    `json:"backup_list"`
+	Notifier     Notifier         `json:"notifier"`
+	Restic       Restic           `json:"restic"`        // restic configuration
+	LogConfig    logger.LogConfig `json:"log_config"`    // logging configuration
+	SwitchConfig SwitchConfig     `json:"switch_config"` // switch configuration for enabling/disabling features
+}
+
+type SwitchConfig struct {
+	CheckDockerCompose   bool `json:"check_docker_compose"`    // whether to enable docker compose for backup
+	CheckStartStopScript bool `json:"check_start_stop_script"` // whether to check start/stop shell scripts
 }
 
 func Parse(f string) (*Config, error) {

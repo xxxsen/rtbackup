@@ -4,15 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
-	"path"
 	"rtbackup/notifier"
 	"runtime/debug"
 	"time"
 
 	"github.com/robfig/cron/v3"
 	"github.com/xxxsen/common/logutil"
+	"github.com/xxxsen/common/trace"
 	"go.uber.org/zap"
 )
 
@@ -48,6 +47,7 @@ func (b *backuperImpl) Run(ctx context.Context) error {
 }
 
 func (b *backuperImpl) runOne(ctx context.Context, item *backupItem) func() {
+	ctx = trace.WithTraceId(ctx, fmt.Sprintf("BK:%s", item.Name))
 	logger := logutil.GetLogger(ctx).With(zap.String("name", item.Name), zap.String("path", item.Path))
 	return func() {
 		logger.Info("backup item start")
@@ -95,7 +95,7 @@ func (b *backuperImpl) runItemBackup(ctx context.Context, item *backupItem) (err
 		}
 	}()
 
-	preHooks, afterHooks := b.rebuildHookList(item)
+	preHooks, afterHooks := item.PreRun, item.AfterRun
 	defer func() {
 		if e := b.runCmds(ctx, item, afterHooks); e != nil { //after无论如何都要执行
 			err = fmt.Errorf("after-run command failed, name:%s, err:%w", item.Name, e)
@@ -108,29 +108,6 @@ func (b *backuperImpl) runItemBackup(ctx context.Context, item *backupItem) (err
 		return fmt.Errorf("backup failed, name:%s, err:%w", item.Name, err)
 	}
 	return nil
-}
-
-func (b *backuperImpl) isContainsFile(dir string, ps []string) bool {
-	for _, p := range ps {
-		if _, err := os.Stat(path.Join(dir, p)); err == nil {
-			return true
-		}
-	}
-	return false
-}
-
-func (b *backuperImpl) rebuildHookList(item *backupItem) ([]string, []string) {
-	pre := item.PreRun
-	after := item.AfterRun
-
-	if b.c.enableDockerCompose {
-		if b.isContainsFile(item.Path, []string{"docker-compose.yml", "docker-compose.yaml"}) {
-			pre = append([]string{"docker compose stop"}, pre...)
-			after = append(after, "docker compose restart")
-		}
-	}
-
-	return pre, after
 }
 
 func (b *backuperImpl) doBackup(ctx context.Context, item *backupItem) error {
