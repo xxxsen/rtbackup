@@ -12,10 +12,13 @@ import (
 const (
 	defaultTgTemplate = `
 <b>{{.Title}}</b>
-Path: {{.Path}}
-Start: {{.Start | TsPrinter}}
-End: {{.End | TsPrinter}}
-Result: {{.IsSuccess | ResultPrinter}}	
+<b>Path</b>: {{.Path}}
+<b>Start</b>: {{.Start | TsPrinter}}
+<b>End</b>: {{.End | TsPrinter}}
+<b>Result</b>: {{.IsSuccess | ResultPrinter}}	
+{{- if not .IsSuccess}}
+<b>ErrMsg</b>: {{.Errmsg}}
+{{- end}}
 `
 )
 

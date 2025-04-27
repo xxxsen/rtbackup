@@ -70,6 +70,9 @@ func (b *backuperImpl) doNotify(ctx context.Context, item *backupItem, start, en
 		End:       end.UnixMilli(),
 		IsSuccess: err == nil,
 	}
+	if err != nil {
+		nt.Errmsg = err.Error()
+	}
 	if err := b.c.notifier.Notify(ctx, nt); err != nil {
 		logutil.GetLogger(ctx).Error("notify failed", zap.Error(err), zap.String("name", item.Name), zap.Any("msg", *nt))
 	}
