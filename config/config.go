@@ -8,11 +8,12 @@ import (
 )
 
 type BackupItem struct {
-	Name      string   `json:"name"`
-	Expr      string   `json:"expr"`       // cron expression
-	Path      string   `json:"path"`       // path to backup
-	PreHooks  []string `json:"pre_hooks"`  // commands to run before backup
-	PostHooks []string `json:"post_hooks"` // commands to run after backup
+	Name        string   `json:"name"`
+	Expr        string   `json:"expr"`         // cron expression
+	BackupPath  string   `json:"backup_path"`  // path to backup
+	ServicePath string   `json:"service_path"` // docker compose 探测的目录, 如果没指定, 则使用path进行探测
+	PreHooks    []string `json:"pre_hooks"`    // commands to run before backup
+	PostHooks   []string `json:"post_hooks"`   // commands to run after backup
 }
 
 type Notifier struct {
@@ -45,8 +46,7 @@ type Config struct {
 }
 
 type SwitchConfig struct {
-	CheckDockerCompose   bool `json:"check_docker_compose"`    // whether to enable docker compose for backup
-	CheckStartStopScript bool `json:"check_start_stop_script"` // whether to check start/stop shell scripts
+	CheckDockerCompose bool `json:"check_docker_compose"` // whether to enable docker compose for backup
 }
 
 func Parse(f string) (*Config, error) {

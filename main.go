@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
+	"path/filepath"
 	"rtbackup/backuper"
 	"rtbackup/config"
 	"rtbackup/notifier"
@@ -39,9 +41,14 @@ func main() {
 	}
 	opts := make([]backuper.Option, 0, len(c.BackupList)+3)
 	for _, item := range c.BackupList {
+		if len(item.BackupPath) == 0 {
+			logkit.Fatal("backup item path is empty", zap.String("name", item.Name))
+		}
+		if err := fixToAbsPath(item); err != nil {
+			logkit.Fatal("failed to fix backup item path", zap.String("name", item.Name), zap.String("path", item.BackupPath), zap.Error(err))
+		}
 		wrapDockerComposeCheck(c, item)
-		wrapStartStopShellCheck(c, item)
-		opts = append(opts, backuper.WithAddBackupItem(item.Name, item.Path, item.Expr, item.PreHooks, item.PostHooks))
+		opts = append(opts, backuper.WithAddBackupItem(item.Name, item.BackupPath, item.Expr, item.PreHooks, item.PostHooks))
 	}
 	opts = append(opts,
 		backuper.WithNotifier(noti),
@@ -57,35 +64,31 @@ func main() {
 	}
 }
 
+func fixToAbsPath(item *config.BackupItem) error {
+	var perr, serr error
+	if len(item.BackupPath) > 0 {
+		item.BackupPath, perr = filepath.Abs(item.BackupPath)
+	}
+	if len(item.ServicePath) > 0 {
+		item.ServicePath, serr = filepath.Abs(item.ServicePath)
+	}
+	if perr != nil || serr != nil {
+		return fmt.Errorf("fix to abs path failed, path:%s, service_path:%s", item.BackupPath, item.ServicePath)
+	}
+	return nil
+}
+
 func wrapDockerComposeCheck(c *config.Config, item *config.BackupItem) {
 	if !c.SwitchConfig.CheckDockerCompose {
 		return
 	}
-	if !utils.IsFileExists(item.Path, []string{"docker-compose.yml", "docker-compose.yaml"}) {
+	path := item.ServicePath
+	if len(path) == 0 {
+		path = item.BackupPath
+	}
+	if !utils.IsFileExists(path, []string{"docker-compose.yml", "docker-compose.yaml"}) {
 		return
 	}
-	item.PreHooks = append([]string{"docker compose stop"}, item.PreHooks...)
-	item.PostHooks = append(item.PostHooks, "docker compose restart")
-}
-
-func wrapStartStopShellCheck(c *config.Config, item *config.BackupItem) {
-	if !c.SwitchConfig.CheckStartStopScript {
-		return
-	}
-	stopShell := utils.IsFileExists(item.Path, []string{"stop.sh"})
-	restartShell := utils.IsFileExists(item.Path, []string{"restart.sh"})
-	startShell := false
-	if !restartShell {
-		startShell = utils.IsFileExists(item.Path, []string{"start.sh"})
-	}
-	if !(stopShell && (restartShell || startShell)) {
-		return
-	}
-	item.PreHooks = append([]string{"sh stop.sh"}, item.PreHooks...)
-	if restartShell {
-		item.PostHooks = append(item.PostHooks, "sh restart.sh")
-	}
-	if startShell {
-		item.PostHooks = append(item.PostHooks, "sh start.sh")
-	}
+	item.PreHooks = append([]string{fmt.Sprintf("cd %s && docker compose stop", path)}, item.PreHooks...)
+	item.PostHooks = append(item.PostHooks, fmt.Sprintf("cd %s && docker compose restart", path))
 }

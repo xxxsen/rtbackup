@@ -42,6 +42,8 @@ func (b *backuperImpl) Run(ctx context.Context) error {
 			zap.String("path", item.Path),
 			zap.String("expr", item.Expr),
 			zap.Time("next_run", b.calcNextRunTime(item.Expr)),
+			zap.Strings("pre_run", item.PreRun),
+			zap.Strings("post_run", item.AfterRun),
 		)
 		if _, err := c.AddFunc(item.Expr, b.wrapTask(ctx, &item)); err != nil {
 			return fmt.Errorf("add cron func failed, item:%+v, err:%w", item, err)
