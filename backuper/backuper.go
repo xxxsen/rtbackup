@@ -37,8 +37,13 @@ func (b *backuperImpl) Run(ctx context.Context) error {
 	c := cron.New(cron.WithSeconds())
 	for _, item := range b.c.backupList {
 		item := item
-		logutil.GetLogger(ctx).Info("add backup item", zap.String("name", item.Name), zap.String("path", item.Path), zap.String("expr", item.Expr))
-		if _, err := c.AddFunc(item.Expr, b.runOne(ctx, &item)); err != nil {
+		logutil.GetLogger(ctx).Info("start adding backup item",
+			zap.String("name", item.Name),
+			zap.String("path", item.Path),
+			zap.String("expr", item.Expr),
+			zap.Time("next_run", b.calcNextRunTime(item.Expr)),
+		)
+		if _, err := c.AddFunc(item.Expr, b.wrapTask(ctx, &item)); err != nil {
 			return fmt.Errorf("add cron func failed, item:%+v, err:%w", item, err)
 		}
 	}
@@ -46,7 +51,17 @@ func (b *backuperImpl) Run(ctx context.Context) error {
 	return nil
 }
 
-func (b *backuperImpl) runOne(ctx context.Context, item *backupItem) func() {
+func (b *backuperImpl) calcNextRunTime(expr string) time.Time {
+	p := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	sc, err := p.Parse(expr)
+	if err != nil {
+		return time.Time{}
+	}
+	next := sc.Next(time.Now())
+	return next
+}
+
+func (b *backuperImpl) wrapTask(ctx context.Context, item *backupItem) func() {
 	ctx = trace.WithTraceId(ctx, fmt.Sprintf("BK:%s", item.Name))
 	logger := logutil.GetLogger(ctx).With(zap.String("name", item.Name), zap.String("path", item.Path))
 	return func() {
