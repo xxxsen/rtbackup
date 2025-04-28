@@ -32,9 +32,10 @@ type ResticKeep struct {
 }
 
 type Restic struct {
-	Repo     string     `json:"repo"`     // restic repository path
-	Password string     `json:"password"` // restic repository password
-	Keep     ResticKeep `json:"keep"`     // restic keep policy
+	Repo     string     `json:"repo"`      // restic repository path
+	Password string     `json:"password"`  // restic repository password
+	Keep     ResticKeep `json:"keep"`      // restic keep policy
+	CacheDir string     `json:"cache_dir"` // restic cache directory
 }
 
 type Config struct {
@@ -50,7 +51,11 @@ type SwitchConfig struct {
 }
 
 func Parse(f string) (*Config, error) {
-	c := &Config{}
+	c := &Config{
+		Restic: Restic{
+			CacheDir: "/tmp/restic-cache",
+		},
+	}
 	raw, err := os.ReadFile(f)
 	if err != nil {
 		return nil, err

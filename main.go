@@ -28,7 +28,11 @@ func main() {
 	}
 	logkit := logger.Init(c.LogConfig.File, c.LogConfig.Level, int(c.LogConfig.FileCount), int(c.LogConfig.FileSize), int(c.LogConfig.KeepDays), c.LogConfig.Console)
 
-	rst, err := restic.New(restic.WithAuth(c.Restic.Password), restic.WithRepo(c.Restic.Repo))
+	rst, err := restic.New(
+		restic.WithAuth(c.Restic.Password),
+		restic.WithRepo(c.Restic.Repo),
+		restic.WithCacheDir(c.Restic.CacheDir),
+	)
 	if err != nil {
 		logkit.Fatal("failed to create restic client", zap.Error(err))
 	}

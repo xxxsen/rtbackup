@@ -5,6 +5,10 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"time"
+
+	"github.com/xxxsen/common/logutil"
+	"go.uber.org/zap"
 )
 
 type IResitc interface {
@@ -37,6 +41,7 @@ func New(opts ...Option) (IResitc, error) {
 }
 
 func (r *resticImpl) runCmd(ctx context.Context, args ...string) error {
+	args = append(args, "--cache-dir", r.c.cacheDir, "--cleanup-cache")
 	cmd := exec.CommandContext(ctx, r.bin, args...)
 	cmd.Env = append(cmd.Env, fmt.Sprintf("RESTIC_REPOSITORY=%s", r.c.repo))
 	if r.c.pwd != "" {
@@ -46,9 +51,12 @@ func (r *resticImpl) runCmd(ctx context.Context, args ...string) error {
 	stderr := bytes.Buffer{}
 	cmd.Stderr = &stderr
 
+	logutil.GetLogger(ctx).Debug("start exec cmd", zap.String("cmd", r.bin), zap.Strings("args", args))
+	start := time.Now()
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("running restic command failed, err:%w, errmsg:%s", err, stderr.String())
 	}
+	logutil.GetLogger(ctx).Debug("exec cmd finished", zap.String("cmd", r.bin), zap.Strings("args", args), zap.Duration("cost", time.Since(start)))
 	return nil
 }
 
