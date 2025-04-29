@@ -15,12 +15,18 @@ import (
 	"go.uber.org/zap"
 )
 
+type backupContext struct {
+	Item        *backupItem
+	NextRunTime time.Time
+}
+
 type IBackuper interface {
 	Run(ctx context.Context) error
 }
 
-type backuperImpl struct {
-	c *config
+type bkImpl struct {
+	c        *config
+	bctxList []*backupContext
 }
 
 func New(opts ...Option) (IBackuper, error) {
@@ -28,55 +34,83 @@ func New(opts ...Option) (IBackuper, error) {
 	for _, opt := range opts {
 		opt(c)
 	}
-	return &backuperImpl{
+	b := &bkImpl{
 		c: c,
-	}, nil
+	}
+	bctxList := make([]*backupContext, 0, len(c.backupList))
+	for i := range c.backupList {
+		backItem := c.backupList[i]
+		next, err := b.calcNextRunTime(backItem.Expr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid expr:%s, name:%s", backItem.Expr, backItem.Name)
+		}
+		bctx := &backupContext{
+			Item:        &backItem,
+			NextRunTime: next,
+		}
+		bctxList = append(bctxList, bctx)
+		logutil.GetLogger(context.Background()).Info("add backup item", zap.String("name", backItem.Name), zap.String("expr", backItem.Expr),
+			zap.String("path", backItem.Path), zap.Time("next_run_time", next))
+	}
+	b.bctxList = bctxList
+	return b, nil
 }
 
-func (b *backuperImpl) Run(ctx context.Context) error {
-	c := cron.New(cron.WithSeconds())
-	for _, item := range b.c.backupList {
-		item := item
-		logutil.GetLogger(ctx).Info("start adding backup item",
-			zap.String("name", item.Name),
-			zap.String("path", item.Path),
-			zap.String("expr", item.Expr),
-			zap.Time("next_run", b.calcNextRunTime(item.Expr)),
-			zap.Strings("pre_run", item.PreRun),
-			zap.Strings("post_run", item.AfterRun),
-		)
-		if _, err := c.AddFunc(item.Expr, b.wrapTask(ctx, &item)); err != nil {
-			return fmt.Errorf("add cron func failed, item:%+v, err:%w", item, err)
+func (b *bkImpl) Run(ctx context.Context) error {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C { //restic这东西, 只能串行执行, 不然其他任务会炸, 难, 总不能加个锁吧?
+		now := time.Now()
+		for _, bctx := range b.bctxList {
+			if bctx.NextRunTime.After(now) {
+				continue
+			}
+			b.runJob(ctx, bctx.Item)
+			bctx.NextRunTime, _ = b.calcNextRunTime(bctx.Item.Expr) //重新计算下下次运行时间
 		}
 	}
-	c.Run()
 	return nil
 }
 
-func (b *backuperImpl) calcNextRunTime(expr string) time.Time {
-	p := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+func (b *bkImpl) calcNextRunTime(expr string) (time.Time, error) {
+	p := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	sc, err := p.Parse(expr)
 	if err != nil {
-		return time.Time{}
+		return time.Time{}, err
 	}
 	next := sc.Next(time.Now())
-	return next
+	return next, nil
 }
 
-func (b *backuperImpl) wrapTask(ctx context.Context, item *backupItem) func() {
+func (b *bkImpl) runJob(ctx context.Context, item *backupItem) {
 	ctx = trace.WithTraceId(ctx, fmt.Sprintf("BK:%s", item.Name))
-	logger := logutil.GetLogger(ctx).With(zap.String("name", item.Name), zap.String("path", item.Path))
-	return func() {
-		logger.Info("backup item start")
-		start := time.Now()
-		err := b.runItemBackup(ctx, item)
-		end := time.Now()
-		b.doNotify(ctx, item, start, end, err)
-		logger.Error("backup item finish", zap.Error(err), zap.Duration("cost", end.Sub(start)))
+	defer func() {
+		if r := recover(); r != nil {
+			logutil.GetLogger(ctx).Error("run item backup panic", zap.String("name", item.Name), zap.String("path", item.Path), zap.Any("expr", item.Expr),
+				zap.Any("pre_run", item.PreRun), zap.Any("post_run", item.AfterRun), zap.Any("stack", string(debug.Stack())))
+		}
+	}()
+	logutil.GetLogger(ctx).Info("start running backup",
+		zap.String("name", item.Name),
+		zap.String("path", item.Path),
+		zap.String("expr", item.Expr),
+		zap.Strings("pre_run", item.PreRun),
+		zap.Strings("post_run", item.AfterRun),
+	)
+	start := time.Now()
+	err := b.runItemBackup(ctx, item)
+	end := time.Now()
+	b.runNotify(ctx, item, start, end, err)
+	b.runForget(ctx, item)
+	logger := logutil.GetLogger(ctx).With(zap.String("name", item.Name), zap.String("path", item.Path), zap.Duration("cost", end.Sub(start)))
+	if err != nil {
+		logger.Error("backup item failed", zap.Error(err))
+		return
 	}
+	logutil.GetLogger(ctx).Info("backup item succ")
 }
 
-func (b *backuperImpl) doNotify(ctx context.Context, item *backupItem, start, end time.Time, err error) {
+func (b *bkImpl) runNotify(ctx context.Context, item *backupItem, start, end time.Time, err error) {
 	if b.c.notifier == nil {
 		return
 	}
@@ -95,23 +129,19 @@ func (b *backuperImpl) doNotify(ctx context.Context, item *backupItem, start, en
 	}
 }
 
-func (b *backuperImpl) runItemBackup(ctx context.Context, item *backupItem) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("run item backup panic, name:%s, panic:%v, stack:%s", item.Name, r, string(debug.Stack()))
-		}
-	}()
-	defer func() {
-		if b.c.keepRule.Last == 0 && b.c.keepRule.Daily == 0 && b.c.keepRule.Weekly == 0 &&
-			b.c.keepRule.Monthly == 0 && b.c.keepRule.Yearly == 0 {
-			return
-		}
-		if e := b.c.resitcer.Forget(ctx, b.c.keepRule.Last, b.c.keepRule.Daily, b.c.keepRule.Weekly,
-			b.c.keepRule.Monthly, b.c.keepRule.Yearly); e != nil {
-			err = fmt.Errorf("do backup forget failed, name:%s, err:%w", item.Name, e)
-		}
-	}()
+func (b *bkImpl) runForget(ctx context.Context, item *backupItem) {
+	if b.c.keepRule.Last == 0 && b.c.keepRule.Daily == 0 && b.c.keepRule.Weekly == 0 &&
+		b.c.keepRule.Monthly == 0 && b.c.keepRule.Yearly == 0 {
+		return
+	}
+	if err := b.c.resitcer.Forget(ctx, b.c.keepRule.Last, b.c.keepRule.Daily, b.c.keepRule.Weekly,
+		b.c.keepRule.Monthly, b.c.keepRule.Yearly); err != nil {
+		logutil.GetLogger(ctx).Error("forget old backups failed",
+			zap.String("name", item.Name), zap.Error(err))
+	}
+}
 
+func (b *bkImpl) runItemBackup(ctx context.Context, item *backupItem) (err error) {
 	preHooks, afterHooks := item.PreRun, item.AfterRun
 	defer func() {
 		if e := b.runCmds(ctx, item, afterHooks); e != nil { //after无论如何都要执行
@@ -127,14 +157,14 @@ func (b *backuperImpl) runItemBackup(ctx context.Context, item *backupItem) (err
 	return nil
 }
 
-func (b *backuperImpl) doBackup(ctx context.Context, item *backupItem) error {
+func (b *bkImpl) doBackup(ctx context.Context, item *backupItem) error {
 	if err := b.c.resitcer.Backup(ctx, item.Path); err != nil {
 		return fmt.Errorf("backup failed, path:%s, err:%w", item.Path, err)
 	}
 	return nil
 }
 
-func (b *backuperImpl) runCmds(ctx context.Context, item *backupItem, cmds []string) error {
+func (b *bkImpl) runCmds(ctx context.Context, item *backupItem, cmds []string) error {
 	if len(cmds) == 0 {
 		return nil
 	}
@@ -147,7 +177,7 @@ func (b *backuperImpl) runCmds(ctx context.Context, item *backupItem, cmds []str
 	return retErr
 }
 
-func (b *backuperImpl) runCmd(ctx context.Context, workdir string, cmdstr string) error {
+func (b *bkImpl) runCmd(ctx context.Context, workdir string, cmdstr string) error {
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", cmdstr)
 	stderr := bytes.Buffer{}
 	stdout := bytes.Buffer{}
